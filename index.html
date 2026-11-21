@@ -53,13 +53,14 @@
 }
 @media print{body{background:white}.topbar,.actions,.add-row,.below,.bottom,.toast,dialog{display:none!important}main{padding:0;max-width:none}.intro{margin-bottom:18px}.intro p{display:none}.metrics{display:none}.sheet{border-radius:0;box-shadow:none;border-color:#aaa}.toolbar{padding:12px 0}th,td{border:1px solid #bbb!important}th{background:#e5edf9!important;color:#222!important}table{min-width:0}input{padding:2px;color:#111}input::placeholder{color:transparent}td{height:38px;padding:4px}th:last-child,td:last-child{display:none}.table-wrap{overflow:visible}tfoot{display:table-row-group}tr{break-inside:avoid}h1{font-size:24px}}
 </style>
+<link rel="stylesheet" href="./import.css">
 </head>
 <body>
 <header class="topbar"><div class="top-inner"><div class="brand"><span class="brand-icon" aria-hidden="true">▦</span>轻松算账</div><span id="save-status" class="save" role="status">自动保存到本机</span></div></header>
 <main>
 <section class="intro"><div><h1>商品清单</h1><p>填好名称、数量和单价，剩下的交给我们。</p></div></section>
 <section class="metrics" aria-label="清单汇总"><div class="metric"><div class="metric-label">商品条目</div><div class="metric-value"><span id="item-count">0</span><small>项</small></div></div><div class="metric"><div class="metric-label">总数量</div><div class="metric-value" id="qty-card">0</div></div><div class="metric total"><div class="metric-label">总金额（元）</div><div class="metric-value"><span class="currency">¥</span><span id="amount-card">0.00</span></div></div></section>
-<section class="sheet" aria-label="可编辑商品表格"><div class="toolbar"><strong>商品明细</strong><div class="actions"><button id="sample">填入图片示例</button><button id="undo" disabled>撤销删除</button></div></div><div class="table-wrap"><table><thead><tr><th scope="col">序号</th><th scope="col">名称</th><th scope="col">数量</th><th scope="col">单价(元)</th><th scope="col">金额(元)</th><th scope="col"><span aria-label="操作"> </span></th></tr></thead><tbody id="rows"></tbody><tfoot><tr><td colspan="2">合计</td><td class="footer-qty" id="qty-total">0</td><td></td><td class="amount" id="amount-total">0.00</td><td></td></tr></tfoot></table></div><button class="add-row" id="add">＋ 添加一行</button></section>
+<section class="sheet" aria-label="可编辑商品表格"><div class="toolbar"><strong>商品明细</strong><div class="actions"><button id="sample">填入图片示例</button><button id="undo" disabled>撤销删除</button></div></div><div class="import-bar"><button id="photo-open" class="primary">拍照识别</button><button id="sheet-open">导入表格</button></div><div class="table-wrap"><table><thead><tr><th scope="col">序号</th><th scope="col">名称</th><th scope="col">数量</th><th scope="col">单价(元)</th><th scope="col">金额(元)</th><th scope="col"><span aria-label="操作"> </span></th></tr></thead><tbody id="rows"></tbody><tfoot><tr><td colspan="2">合计</td><td class="footer-qty" id="qty-total">0</td><td></td><td class="amount" id="amount-total">0.00</td><td></td></tr></tfoot></table></div><button class="add-row" id="add">＋ 添加一行</button></section>
 <div class="below"><div><p id="hint" role="status">直接点击表格修改，金额与合计实时更新。</p><p>数据仅保存在当前浏览器；重要清单可导出留存。</p></div><button class="text-button" id="clear">清空表格</button></div>
 </main>
 <footer class="bottom"><div class="bottom-inner"><div class="bottom-total"><span id="bottom-label">合计金额</span><strong>¥ <span id="bottom-amount">0.00</span></strong></div><div class="bottom-actions"><button class="print-btn" id="print">打印清单</button><button class="primary" id="export">导出表格</button></div></div></footer>
@@ -95,4 +96,28 @@ $('print').onclick=()=>{if(ready())window.print();};
 $('export').onclick=()=>{const c=ready();if(!c)return;const cells=value=>'"'+String(value).replace(/"/g,'""')+'"';const rows=[['序号','名称','数量','单价(元)','金额(元)']];let n=0;data.forEach((r,i)=>{if(!active(r))return;const name=/^[=+@\-\t\r\n]/.test(r.name)?"'"+r.name:r.name;rows.push([++n,name,r.qty,money(c.lines[i].p).replaceAll(',',''),money(c.lines[i].amount).replaceAll(',','')]);});rows.push(['合计','',quantity(c.qty),'',money(c.total).replaceAll(',','')]);const blob=new Blob(['\uFEFF'+rows.map(row=>row.map(cells).join(',')).join('\r\n')],{type:'text/csv;charset=utf-8;'});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='商品清单-'+new Date().toLocaleDateString('sv-SE')+'.csv';document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(url),10000);toast('已导出，可用 Excel 或 WPS 打开');};
 render();
 </script>
+<dialog id="importer" aria-labelledby="import-title">
+  <header><h2 id="import-title">拍照识别</h2><button id="import-close" aria-label="关闭导入">关闭</button></header>
+  <section id="photo-mode">
+    <p>每行写名称、数量、单价。照片在本机识别，首次使用需下载识别组件。</p>
+    <div class="source-actions"><button id="take-photo">拍一张</button><button id="choose-image">从相册选</button></div>
+    <input hidden type="file" id="camera" accept="image/*" capture="environment"><input hidden type="file" id="album" accept="image/*">
+    <section id="photo-preview" hidden><p>拖动框选纸条上的文字，或直接识别整张图。</p>
+      <div id="photo-frame"><img id="paper" alt="待识别的照片" draggable="false"><span id="crop-box" hidden></span></div>
+      <div class="source-actions"><button id="read-photo" class="primary">开始识别</button><button id="full-photo">选整张图</button></div>
+    </section>
+  </section>
+  <section id="sheet-mode" hidden>
+    <p>可以粘贴豆包生成的表格，或选择 Excel（.xlsx）和 CSV 文件。Excel 读取第一张工作表。</p>
+    <textarea id="paste-grid" aria-label="粘贴表格" placeholder="名称　数量　单价&#10;黄山　2　76"></textarea>
+    <div class="source-actions"><button id="read-text" class="primary">读取粘贴内容</button><button id="choose-sheet">选择文件</button></div>
+    <input type="file" id="sheet-file" hidden accept=".xlsx,.csv,.tsv,.txt">
+  </section>
+  <p id="import-status" role="status" aria-live="polite"></p>
+  <section id="review" hidden><h3>核对明细</h3><p>对照原图修改或补行，取消勾选可跳过该行。确认后追加到当前清单。</p>
+    <div class="draft-grid draft-head"><span>选</span><span>名称</span><span>数量</span><span>单价(元)</span></div>
+    <div id="draft-list"></div><button id="add-draft">＋ 补一行</button><button class="primary" id="apply-import">确认导入</button>
+  </section>
+</dialog>
+<script type="module" src="./import.js"></script>
 </body></html>

@@ -1,0 +1,22 @@
+.import-bar,.source-actions {display:flex;gap:8px;flex-wrap:wrap}
+.import-bar {padding:0 12px 10px}
+#importer {width:min(620px,calc(100% - 16px)); max-width:none;max-height:91dvh;overflow:auto;padding:16px}
+#importer header {display:flex;align-items:center;justify-content:space-between}
+#importer h2,#importer h3 {margin:0}
+#importer p {font-size:14px;margin:8px 0;line-height:1.5;color:#425673}
+#importer button {padding:6px 10px;font-size:14px}
+#importer [hidden] {display:none!important}
+#paste-grid {width:100%;min-height:100px;font:inherit;padding:8px}
+#photo-frame {position:relative;display:table;max-width:100%;margin:8px auto;touch-action:none;user-select:none}
+#paper {display:block;max-width:100%;max-height:44vh;width:auto;height:auto;pointer-events:none}
+#crop-box {position:absolute;border:2px solid #2563eb;background:#2563eb17;pointer-events:none}
+#review {margin:14px 0 0}
+#draft-list {margin-bottom:10px}
+.draft-grid {display:grid;grid-template-columns:28px minmax(0,1.7fr) minmax(0,.8fr) minmax(0,1fr);align-items:center;gap:4px}
+.draft-head {font-size:13px;color:#526885;padding:4px 0}
+.draft-line {border-top:1px solid #dae2ef;padding:5px 0}
+.draft-line input {border:1px solid #cbd6e7;padding:6px 4px;font-size:16px}
+.draft-line input[type=checkbox] {width:18px;height:18px}
+.draft-line small {grid-column:2/-1;color:#65748c;overflow-wrap:anywhere}
+@media print {.import-bar,#importer {display:none!important}}
+.line-photo {grid-column:2/-1;display:block;max-width:100%;max-height:65px;width:auto;height:auto}
