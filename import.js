@@ -5,10 +5,40 @@ const byId=id=>document.getElementById(id);
 const dialog=byId('importer'), paper=byId('paper'), frame=byId('photo-frame');
 const status=text=>{byId('import-status').textContent=text;};
 let job=0, worker=null, photoUrl='', crop=null, start=null, timeout;
+let running=false, ready=false, idleTimer;
+
+// Keep a warm model for the next photo. Cancel active work immediately when
+// the user changes input, and release unused WASM memory after a short break.
+function releaseWorker() {
+  clearTimeout(idleTimer);
+  worker?.terminate();
+  worker=null;
+  ready=false;
+}
+function keepWarm() {
+  clearTimeout(idleTimer);
+  if(worker) idleTimer=setTimeout(releaseWorker, 180000);
+}
 function stop() {
   job++; clearTimeout(timeout);
-  worker?.terminate(); worker=null;
+  if(running) releaseWorker();
+  running=false;
+  keepWarm();
   byId('read-photo').disabled=false;
+}
+function prepareWorker() {
+  if(worker) return worker;
+  const instance=new Worker(new URL('./ocr/engine.mjs?v=2',import.meta.url),{type:'module'});
+  worker=instance;
+  instance.onmessage=({data})=>{
+    if(instance!==worker) return;
+    if(data.error) {releaseWorker();return;}
+    if(data.stage==='ready') ready=true;
+  };
+  instance.onerror=()=>{if(instance===worker) releaseWorker();};
+  instance.postMessage({type:'warmup'});
+  keepWarm();
+  return instance;
 }
 function releasePhoto() {
   if(photoUrl) URL.revokeObjectURL(photoUrl);
@@ -24,6 +54,9 @@ function open(mode) {
   byId('photo-mode').hidden=mode!=='photo';byId('sheet-mode').hidden=mode!=='sheet';
   byId('import-title').textContent=mode==='photo'?'拍照识别':'导入表格';
   dialog.showModal();dialog.scrollTop=0;
+  if(mode==='photo') {
+    try {prepareWorker();} catch {releaseWorker();}
+  }
 }
 byId('photo-open').onclick=()=>open('photo');
 byId('sheet-open').onclick=()=>open('sheet');
@@ -55,7 +88,7 @@ function drawCrop() {
   const box=byId('crop-box');box.hidden=!crop;
   if(crop) Object.assign(box.style,{left:crop.x*100+'%',top:crop.y*100+'%',width:crop.w*100+'%',height:crop.h*100+'%'});
 }
-frame.onpointerdown=e=>{if(worker) return;start=point(e);frame.setPointerCapture(e.pointerId);};
+frame.onpointerdown=e=>{if(running) return;start=point(e);frame.setPointerCapture(e.pointerId);};
 frame.onpointermove=e=>{
   if(!start) return;
   const p=point(e);
@@ -63,7 +96,7 @@ frame.onpointermove=e=>{
   drawCrop();
 };
 frame.onpointerup=frame.onpointercancel=()=>{start=null;if(crop && Math.min(crop.w,crop.h)<0.02) crop=null;drawCrop();};
-byId('full-photo').onclick=()=>{if(!worker){crop=null;drawCrop();}};
+byId('full-photo').onclick=()=>{if(!running){crop=null;drawCrop();}};
 function imagePixels() {
   const r=crop || {x:0,y:0,w:1,h:1};
   const sw=paper.naturalWidth*r.w,sh=paper.naturalHeight*r.h;
@@ -77,23 +110,26 @@ function imagePixels() {
 }
 byId('read-photo').onclick=()=>{
   stop();clearDraft();const current=job;
-  byId('read-photo').disabled=true;status('正在加载本机识别组件，首次使用可能需要等一会儿…');
+  byId('read-photo').disabled=true;status(ready?'正在识别文字和数字…':'正在准备识别模型，首次使用需要下载…');
   const fail=()=>{
     if(current!==job)return;
     stop();status('识别未完成。可重新框选纸条再试，或在「导入表格」中粘贴豆包整理的结果。');
   };
   try {
     const pixels=imagePixels();
-    worker=new Worker(new URL('./ocr/engine.mjs',import.meta.url),{type:'module'});
+    const activeWorker=prepareWorker();
+    clearTimeout(idleTimer);running=true;
     timeout=setTimeout(fail,240000);
-    worker.onerror=fail;
-    worker.onmessage=({data:message})=>{
+    activeWorker.onerror=fail;
+    activeWorker.onmessage=({data:message})=>{
       if(current!==job)return;
-      if(message.stage){status('正在识别文字和数字…');return;}
+      if(message.stage==='ready'){ready=true;return;}
+      if(message.stage==='reading'){ready=true;status('正在识别文字和数字…');return;}
+      if(message.stage==='rows'){status('正在整理商品行…');return;}
       if(!message.items){fail();return;}
-      stop();showRows(photoRows(message.items,message.rows),'照片');
+      running=false;stop();showRows(photoRows(message.items,message.rows),'照片');
     };
-    worker.postMessage(pixels,[pixels.data.buffer]);
+    activeWorker.postMessage(pixels,[pixels.data.buffer]);
   } catch {fail();}
 };
 function addRow(row) {

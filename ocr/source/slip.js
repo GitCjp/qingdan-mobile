@@ -56,8 +56,9 @@ export async function readSlip(items,pixels,cv,mat,recognizer) {
       const box=numberBox(item);
       return box.right<nameRight && box.y>=top && box.y<bottom && box.height<step*1.35 && /[\p{L}]/u.test(item.text);
     }).sort((a,b)=>b.score-a.score)[0];
-    const isolated=await read(2,nameRight);
-    const name=(detected && detected.score>=.76 ? detected.text : isolated) || detected?.text || '';
+    const name = detected?.score >= .76
+      ? detected.text
+      : (await read(2, nameRight)) || detected?.text || '';
     const value=async(left,right,boxes)=>{
       const known=lines[i].filter(n=>boxes.includes(n));
       if(known.length===1)return known[0].text;
