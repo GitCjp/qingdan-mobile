@@ -26,13 +26,24 @@ function stop() {
   keepWarm();
   byId('read-photo').disabled=false;
 }
+function reportAssets(message) {
+  const label=byId('resource-state');
+  if(message.stage==='assets'){
+    label.textContent='正在准备识别文件 '+Math.floor(100*message.done/message.total)+'%';
+    return true;
+  }
+  if(message.stage==='initializing'){label.textContent='文件已就绪，正在启动识别。';return true;}
+  if(message.stage==='ready')label.textContent='识别组件已就绪';
+  return false;
+}
 function prepareWorker() {
   if(worker) return worker;
-  const instance=new Worker(new URL('./ocr/engine.mjs?v=2',import.meta.url),{type:'module'});
+  const instance=new Worker(new URL('./ocr/start.mjs',import.meta.url),{type:'module'});
   worker=instance;
   instance.onmessage=({data})=>{
     if(instance!==worker) return;
-    if(data.error) {releaseWorker();return;}
+    if(reportAssets(data))return;
+    if(data.error) {releaseWorker();byId("resource-state").textContent="识别文件准备失败，可重试或导入离线包。";return;}
     if(data.stage==='ready') ready=true;
   };
   instance.onerror=()=>{if(instance===worker) releaseWorker();};
@@ -54,9 +65,7 @@ function open(mode) {
   byId('photo-mode').hidden=mode!=='photo';byId('sheet-mode').hidden=mode!=='sheet';
   byId('import-title').textContent=mode==='photo'?'拍照识别':'导入表格';
   dialog.showModal();dialog.scrollTop=0;
-  if(mode==='photo') {
-    try {prepareWorker();} catch {releaseWorker();}
-  }
+  byId('resource-state').textContent=ready?'识别组件已就绪':'';
 }
 byId('photo-open').onclick=()=>open('photo');
 byId('sheet-open').onclick=()=>open('sheet');
@@ -75,6 +84,7 @@ async function selectPhoto(event) {
     if(current!==job) return;
     byId('photo-preview').hidden=false;crop=findPaper(paper);drawCrop();
     status(crop?'已框选疑似纸条，可拖动重选后开始识别。':'');
+    try{prepareWorker();}catch{releaseWorker();}
   } catch {
     if(current===job) status('这张图打不开，请选择 JPG、PNG 或照片截图。');
   }
@@ -123,6 +133,7 @@ byId('read-photo').onclick=()=>{
     activeWorker.onerror=fail;
     activeWorker.onmessage=({data:message})=>{
       if(current!==job)return;
+      if(reportAssets(message))return;
       if(message.stage==='ready'){ready=true;return;}
       if(message.stage==='reading'){ready=true;status('正在识别文字和数字…');return;}
       if(message.stage==='rows'){status('正在整理商品行…');return;}
@@ -185,4 +196,20 @@ byId('apply-import').onclick=()=>{
   undo=structuredClone(data);
   data=[...data.filter(active),...rows];
   render();save();dialog.close();toast('已追加 '+rows.length+' 行，可在表中继续修改');
+};
+
+byId('choose-pack').onclick=()=>byId('pack-file').click();
+byId('pack-file').onchange=async event=>{
+  const file=event.target.files[0];event.target.value='';if(!file)return;
+  stop();releaseWorker();
+  const current=job;
+  const info=text=>{if(current===job)byId('resource-state').textContent=text;};
+  info('正在校验并保存识别包…');
+  try {
+    const {installPack}=await import('./ocr/install.mjs');
+    await installPack(file);
+    info('离线识别包已保存在此浏览器。现在可以拍照或选图。');
+  } catch(error) {
+    info('导入失败：'+(error.message || '请重新选择完整的 ZIP 包'));
+  }
 };
